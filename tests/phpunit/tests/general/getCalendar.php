@@ -439,4 +439,66 @@ class Tests_General_GetCalendar extends WP_UnitTestCase {
 		$this->assertGreaterThan( 0, $queries_post, 'Post calendar should require queries after flush.' );
 		$this->assertGreaterThan( 0, $queries_page, 'Page calendar should require queries after flush.' );
 	}
+
+	/**
+	 * A pre-deletion callback must not leave the deleted post in the calendar.
+	 *
+	 * @ticket 61343
+	 */
+	public function test_calendar_rendered_before_post_deletion_is_invalidated() {
+		$post_id         = self::factory()->post->create(
+			array( 'post_date' => '2025-02-12 12:00:00' )
+		);
+		$render_calendar = static function () {
+			get_calendar( array( 'display' => false ) );
+		};
+
+		add_action( 'before_delete_post', $render_calendar, 20 );
+		wp_delete_post( $post_id, true );
+		remove_action( 'before_delete_post', $render_calendar, 20 );
+
+		$this->assertStringNotContainsString(
+			'Posts published on February 12, 2025',
+			get_calendar( array( 'display' => false ) ),
+			'The calendar must not retain a day link for a deleted post.'
+		);
+	}
+
+	/**
+	 * Losing the invalidation token must not revive an outdated calendar.
+	 *
+	 * Only meaningful for object caches that do not support flushing groups,
+	 * as other caches do not use an invalidation token.
+	 *
+	 * @ticket 61343
+	 */
+	public function test_evicted_invalidation_token_does_not_revive_stale_calendar() {
+		$this->go_to( '/?m=202502' );
+
+		$post_id = self::factory()->post->create(
+			array( 'post_date' => '2025-02-12 12:00:00' )
+		);
+
+		$this->assertStringContainsString(
+			'Posts published on February 12, 2025',
+			get_calendar( array( 'display' => false ) )
+		);
+
+		// Model the token being evicted independently of the cached calendar.
+		wp_cache_delete( 'last_changed', 'calendar' );
+		wp_cache_delete( 'get_calendar_generation', 'calendar' );
+
+		wp_update_post(
+			array(
+				'ID'        => $post_id,
+				'post_date' => '2025-02-13 12:00:00',
+			)
+		);
+
+		$this->assertStringNotContainsString(
+			'Posts published on February 12, 2025',
+			get_calendar( array( 'display' => false ) ),
+			'An evicted invalidation token must not expose a stale calendar.'
+		);
+	}
 }

@@ -2617,8 +2617,7 @@ function get_calendar( $args = array() ) {
 	wp_recursive_ksort( $cache_args );
 
 	if ( ! wp_cache_supports( 'flush_group' ) ) {
-		$generation                 = wp_cache_get( 'get_calendar_generation', 'calendar' );
-		$cache_args['_generation_'] = $generation ? (int) $generation : 0;
+		$cache_args['_last_changed_'] = wp_cache_get_last_changed( 'calendar' );
 	}
 
 	$key   = 'get_calendar_' . md5( serialize( $cache_args ) );
@@ -2898,11 +2897,8 @@ function delete_get_calendar_cache() {
 	}
 
 	// Fallback for object cache implementations that do not support flushing groups.
-	// wp_cache_incr() returns false when the key does not exist in some backends
-	// (e.g. Memcached), so initialize the counter on the first invalidation.
-	if ( false === wp_cache_incr( 'get_calendar_generation', 1, 'calendar' ) ) {
-		wp_cache_add( 'get_calendar_generation', 1, 'calendar' );
-	}
+	// A microtime token is never reused, so an evicted token cannot revive an old entry.
+	wp_cache_set_last_changed( 'calendar' );
 }
 
 /**
